@@ -11,7 +11,8 @@ class Settings(BaseSettings):
     VISUAL_PROVIDER_CHAIN: str = "gemini_image,replicate_flux,mock"
 
     GEMINI_API_KEY: str | None = None
-    GEMINI_IMAGE_MODEL: str = "gemini-3.1-flash-image-preview"
+    GEMINI_IMAGE_MODEL: str = "gemini-2.5-flash-image"
+    GEMINI_IMAGE_MODEL_CHAIN: str = "gemini-2.5-flash-image,gemini-3-pro-image-preview"
 
     REPLICATE_API_TOKEN: str | None = None
     REPLICATE_FLUX_MODEL: str = "black-forest-labs/flux-kontext-pro"
@@ -21,6 +22,7 @@ class Settings(BaseSettings):
 
     DEFAULT_VARIANTS: int = 2
     REQUEST_TIMEOUT_SECONDS: int = 120
+    MAX_UPLOAD_MB: int = 12
 
     class Config:
         env_file = ".env"

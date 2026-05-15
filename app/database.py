@@ -16,8 +16,44 @@ class Base(DeclarativeBase):
 
 
 def init_db():
-    from app.repositories.models import Asset
+    from app.repositories.models import Asset, AssetEvent
     Base.metadata.create_all(bind=engine)
+    _migrate_sqlite_assets_table()
+
+
+def _migrate_sqlite_assets_table():
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        return
+
+    column_defs = {
+        "campaign_name": "VARCHAR",
+        "brand_name": "VARCHAR",
+        "target_audience": "TEXT",
+        "customer_persona": "TEXT",
+        "platform": "VARCHAR",
+        "marketing_objective": "VARCHAR",
+        "funnel_stage": "VARCHAR",
+        "copy_framework": "VARCHAR",
+        "selling_points": "TEXT",
+        "price": "VARCHAR",
+        "offer": "VARCHAR",
+        "language": "VARCHAR",
+        "compliance_notes": "TEXT",
+        "channel_outputs_json": "TEXT",
+        "quality_report_json": "TEXT",
+        "exported_at": "DATETIME",
+    }
+
+    with engine.begin() as conn:
+        existing = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(assets)").fetchall()
+        }
+        for column_name, column_type in column_defs.items():
+            if column_name not in existing:
+                conn.exec_driver_sql(
+                    f"ALTER TABLE assets ADD COLUMN {column_name} {column_type}"
+                )
 
 
 def get_db():

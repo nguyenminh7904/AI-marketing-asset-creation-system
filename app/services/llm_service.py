@@ -26,15 +26,60 @@ class LLMService:
 
         return providers
 
-    def generate_product_content(self, product_name, visual_prompt, content_prompt, tone) -> dict:
+    def generate_product_content(
+        self,
+        product_name,
+        visual_prompt,
+        content_prompt,
+        tone,
+        campaign_context: dict | None = None,
+    ) -> dict:
         errors = []
 
         for provider in self.providers:
             try:
                 logger.info(f"Trying LLM provider | provider={provider.name}")
-                return provider.generate(product_name, visual_prompt, content_prompt, tone)
+                content = provider.generate(
+                    product_name,
+                    visual_prompt,
+                    content_prompt,
+                    tone,
+                    campaign_context=campaign_context or {},
+                )
+                return self._normalize_content(content)
             except Exception as exc:
-                logger.exception(f"LLM provider failed | provider={provider.name} | error={exc}")
-                errors.append(f"{provider.name}: {exc}")
+                error = self._safe_error(exc)
+                logger.warning(f"LLM provider failed | provider={provider.name} | error={error}")
+                errors.append(f"{provider.name}: {error}")
 
         raise RuntimeError("All LLM providers failed: " + " | ".join(errors))
+
+    def _normalize_content(self, content: dict) -> dict:
+        hashtags = content.get("hashtags") or []
+        if isinstance(hashtags, str):
+            hashtags = [tag.strip() for tag in hashtags.split() if tag.strip()]
+
+        channel_outputs = content.get("channel_outputs") or {}
+        description = content.get("description") or channel_outputs.get("product_description") or ""
+        caption = content.get("caption") or channel_outputs.get("instagram_caption") or ""
+
+        if "product_description" not in channel_outputs:
+            channel_outputs["product_description"] = description
+        if "instagram_caption" not in channel_outputs:
+            channel_outputs["instagram_caption"] = caption
+        if "hashtags" not in channel_outputs:
+            channel_outputs["hashtags"] = hashtags
+
+        return {
+            "provider": content.get("provider", "unknown"),
+            "description": description,
+            "caption": caption,
+            "hashtags": hashtags,
+            "channel_outputs": channel_outputs,
+        }
+
+    def _safe_error(self, exc: Exception) -> str:
+        message = str(exc).replace("\n", " ").strip()
+        if len(message) > 240:
+            message = message[:240] + "..."
+        return f"{type(exc).__name__}: {message}"

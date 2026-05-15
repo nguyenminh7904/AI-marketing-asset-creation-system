@@ -2,7 +2,7 @@ from uuid import uuid4
 from loguru import logger
 
 from app.core.schemas import GenerationRequest, GenerationResult, VariantResult
-from app.core.status import PENDING_REVIEW, FAILED
+from app.core.status import GENERATED, FAILED
 from app.services.visual_service import VisualService
 from app.services.scoring_service import ScoringService
 from app.services.llm_service import LLMService
@@ -21,6 +21,8 @@ class ProductPromotionPipeline:
         request: GenerationRequest,
     ) -> GenerationResult:
         asset_id = str(uuid4())
+        campaign_context = self._campaign_context(request)
+        enriched_visual_prompt = self._build_visual_prompt(request, campaign_context)
 
         try:
             logger.info(f"Pipeline started | asset_id={asset_id}")
@@ -29,23 +31,29 @@ class ProductPromotionPipeline:
                 asset_id=asset_id,
                 product_image_path=product_image_path,
                 reference_image_path=reference_image_path,
-                visual_prompt=request.visual_prompt,
+                visual_prompt=enriched_visual_prompt,
                 num_variants=request.num_variants,
             )
 
             scored_variants = self.scoring_service.score_variants(
                 variants=variants,
-                visual_prompt=request.visual_prompt,
+                visual_prompt=enriched_visual_prompt,
                 reference_image_path=reference_image_path,
             )
 
             best = self.scoring_service.pick_best(scored_variants)
+            quality_report = self.scoring_service.build_quality_report(
+                scored_variants=scored_variants,
+                best_variant_id=best["variant_id"],
+                campaign_context=campaign_context,
+            )
 
             content = self.llm_service.generate_product_content(
                 product_name=request.product_name,
-                visual_prompt=request.visual_prompt,
+                visual_prompt=enriched_visual_prompt,
                 content_prompt=request.content_prompt,
                 tone=request.tone,
+                campaign_context=campaign_context,
             )
 
             visual_provider_used = ",".join(sorted(set(v.get("provider", "unknown") for v in scored_variants)))
@@ -57,7 +65,7 @@ class ProductPromotionPipeline:
 
             return GenerationResult(
                 asset_id=asset_id,
-                status=PENDING_REVIEW,
+                status=GENERATED,
                 product_image_path=product_image_path,
                 reference_image_path=reference_image_path,
                 best_image_path=best["image_path"],
@@ -68,6 +76,8 @@ class ProductPromotionPipeline:
                 description=content["description"],
                 caption=content["caption"],
                 hashtags=content["hashtags"],
+                channel_outputs=content["channel_outputs"],
+                quality_report=quality_report,
             )
 
         except Exception as exc:
@@ -85,5 +95,36 @@ class ProductPromotionPipeline:
                 description="",
                 caption="",
                 hashtags=[],
+                channel_outputs={},
+                quality_report={},
                 error_message=str(exc),
             )
+
+    def _campaign_context(self, request: GenerationRequest) -> dict:
+        return {
+            "campaign_name": request.campaign_name,
+            "brand_name": request.brand_name,
+            "target_audience": request.target_audience,
+            "customer_persona": request.customer_persona,
+            "platform": request.platform,
+            "marketing_objective": request.marketing_objective,
+            "funnel_stage": request.funnel_stage,
+            "copy_framework": request.copy_framework,
+            "selling_points": request.selling_points,
+            "price": request.price,
+            "offer": request.offer,
+            "language": request.language,
+            "compliance_notes": request.compliance_notes,
+        }
+
+    def _build_visual_prompt(self, request: GenerationRequest, campaign_context: dict) -> str:
+        context_lines = [
+            f"Campaign: {campaign_context.get('campaign_name') or 'product marketing campaign'}",
+            f"Brand: {campaign_context.get('brand_name') or 'small fashion seller'}",
+            f"Target audience: {campaign_context.get('target_audience') or 'fashion buyers'}",
+            f"Platform: {campaign_context.get('platform')}",
+            f"Marketing objective: {campaign_context.get('marketing_objective')}",
+            f"Funnel stage: {campaign_context.get('funnel_stage')}",
+            f"Selling points: {campaign_context.get('selling_points') or 'product identity and visual quality'}",
+        ]
+        return request.visual_prompt + "\n\nMarketing context:\n" + "\n".join(context_lines)

@@ -37,6 +37,7 @@ class VisualService:
         num_variants: int,
     ) -> list[dict]:
         results = []
+        disabled_providers = {}
 
         for i in range(num_variants):
             output_path = f"storage/output/{asset_id}_v{i + 1}.jpg"
@@ -47,6 +48,7 @@ class VisualService:
                 reference_image_path,
                 visual_prompt,
                 output_path,
+                disabled_providers,
             )
             results.append(result)
 
@@ -60,10 +62,18 @@ class VisualService:
         reference_image_path: str | None,
         visual_prompt: str,
         output_path: str,
+        disabled_providers: dict[str, str],
     ) -> dict:
         errors = []
 
         for provider in self.providers:
+            if provider.name in disabled_providers:
+                logger.info(
+                    f"Skipping visual provider | provider={provider.name} | "
+                    f"variant={variant_index + 1} | reason={disabled_providers[provider.name]}"
+                )
+                continue
+
             try:
                 logger.info(f"Trying visual provider | provider={provider.name} | variant={variant_index + 1}")
                 return provider.generate_variant(
@@ -75,7 +85,38 @@ class VisualService:
                     output_path=output_path,
                 )
             except Exception as exc:
-                logger.exception(f"Visual provider failed | provider={provider.name} | error={exc}")
-                errors.append(f"{provider.name}: {exc}")
+                error = self._safe_error(exc)
+                logger.warning(f"Visual provider failed | provider={provider.name} | error={error}")
+                errors.append(f"{provider.name}: {error}")
+                if self._should_disable_for_run(error):
+                    disabled_providers[provider.name] = error
+                    logger.warning(
+                        f"Disabling visual provider for current run | provider={provider.name} | reason={error}"
+                    )
 
         raise RuntimeError("All visual providers failed: " + " | ".join(errors))
+
+    def _safe_error(self, exc: Exception) -> str:
+        message = str(exc).replace("\n", " ").strip()
+        if len(message) > 240:
+            message = message[:240] + "..."
+        return f"{type(exc).__name__}: {message}"
+
+    def _should_disable_for_run(self, error: str) -> bool:
+        text = error.lower()
+        markers = [
+            "401",
+            "402",
+            "429",
+            "quota",
+            "resource_exhausted",
+            "unauthenticated",
+            "authentication token",
+            "invalid authentication",
+            "insufficient credit",
+            "billing",
+            "payment method",
+            "rate limit",
+            "throttled",
+        ]
+        return any(marker in text for marker in markers)
