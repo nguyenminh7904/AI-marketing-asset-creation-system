@@ -436,7 +436,7 @@ def render_sidebar():
                 st.success("Ready to generate")
                 st.caption(f"Visual pipeline: {health['visual_provider_chain']}")
                 st.caption(f"Copy pipeline: {health['llm_provider_chain']}")
-                if health.get("google_imagen_model"):
+                if "google_imagen" in health["visual_provider_chain"] and health.get("google_imagen_model"):
                     st.caption(f"Imagen fallback: {health['google_imagen_model']}")
                 for warning in health.get("configuration_warnings", []):
                     st.warning(warning)

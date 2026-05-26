@@ -4,8 +4,8 @@ from loguru import logger
 
 from app.config import settings
 from app.services.visual_providers.cloudflare_flux_provider import CloudflareFluxProvider
+from app.services.visual_providers.cloudflare_inpaint_provider import CloudflareInpaintProvider
 from app.services.visual_providers.google_imagen_provider import GoogleImagenProvider
-from app.services.visual_providers.gemini_image_provider import GeminiImageProvider
 from app.services.visual_providers.replicate_flux_provider import ReplicateFluxProvider
 from app.services.visual_providers.mock_provider import MockVisualProvider
 from app.services.visual_providers.original_provider import OriginalImageProvider
@@ -18,9 +18,9 @@ class VisualService:
     def _build_provider_chain(self):
         registry = {
             "cloudflare_flux": CloudflareFluxProvider,
+            "cloudflare_inpaint": CloudflareInpaintProvider,
             "google_imagen": GoogleImagenProvider,
             "imagen": GoogleImagenProvider,
-            "gemini_image": GeminiImageProvider,
             "replicate_flux": ReplicateFluxProvider,
             "original": OriginalImageProvider,
             "mock": MockVisualProvider,

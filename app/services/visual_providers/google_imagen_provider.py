@@ -129,7 +129,7 @@ Return a concise paragraph.
 Create a premium luxury product marketing image.
 
 Important limitation:
-Google Imagen through the Gemini API is used here as an input-aware fallback, not pixel-level image editing.
+Google Imagen through the Gemini API is used here as an input-aware concept generator, not pixel-level image editing.
 The uploaded product/reference images were summarized by a vision model, then passed into this prompt.
 Preserve the described product identity as closely as possible, but do not invent brand marks or false details.
 

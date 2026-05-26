@@ -46,8 +46,8 @@ The following behaviors were observed in local application logs during integrati
 | Date / Time | Component | Observed Failure | System Response | Current Mitigation |
 | --- | --- | --- | --- | --- |
 | May 25, 2026, 11:51:08 AM | Replicate FLUX Kontext Max | HTTP `402` insufficient credit. | Tried the next configured Replicate model. | Cloudflare is the current free-tier demo editor; Replicate remains optional for paid fallback use. |
-| May 25, 2026, 11:51:09 AM | Replicate FLUX Kontext Pro | HTTP `429` throttle while the account had reduced unpaid rate limits. | Proceeded to the next provider. | Replicate has bounded retry handling; it is not on the current demo path. |
-| May 25, 2026, 11:51:11 AM | Gemini Image models | HTTP `429 RESOURCE_EXHAUSTED` for both configured image models. | Returned the original product image through `original_fallback`. | Gemini Image is optional; the current demo path uses Cloudflare first. |
+| May 25, 2026, 11:51:09 AM | Replicate FLUX Kontext Pro | HTTP `429` throttle while the account had reduced unpaid rate limits. | Proceeded to the next provider. | Replicate remains configured as an optional fallback and will work when credits are available. |
+| May 25, 2026, 11:51:11 AM | Former Gemini Image models | HTTP `429 RESOURCE_EXHAUSTED` for both configured image models. | Returned the original product image through `original_fallback`. | `gemini_image` has been removed from the current visual pipeline because it is not part of the free demo strategy. |
 | May 25, 2026, 11:51:16 AM | Visual generation run | All configured generative image editors in that run failed. | Completed successfully with `visual_provider=original_fallback` and Gemini text copy. | The identity-safe original fallback remains configured last in the chain. |
 | May 25, 2026, after Cloudflare live generation | Opaque JPG AI editing | Fine product surface detail could be reinterpreted, including an observed cracked appearance. | Generation technically succeeded, but product fidelity required review. | Prompts were tightened, ordinary AI edits are marked unverified, approval/export are gated, and transparent PNG overlay is recommended for exact surfaces. |
 
@@ -62,9 +62,9 @@ Earlier experimental logs also show Google Imagen rejecting generation on an unp
 - Optional controls for a style reference, seller details, language, custom direction, and additional variations are kept out of the primary flow.
 - Reference-based visual generation through a provider chain:
   - Cloudflare Workers AI FLUX.2 Klein 4B for a fast demo-friendly direct product editor
-  - Replicate FLUX Kontext Max then Pro for direct product editing
-  - Replicate FLUX Multi-Image Kontext Max then Pro when a style reference is uploaded
-  - Gemini Image as an optional direct-editing fallback when quota is available
+  - Cloudflare Stable Diffusion Inpainting as a masked background-only fallback for transparent PNG product cutouts
+  - Replicate FLUX Kontext Max then Pro as an installed optional fallback when Replicate credits are available
+  - Replicate FLUX Multi-Image Kontext Max then Pro as the optional fallback when a style reference is uploaded
   - Original-image fallback that preserves the submitted image if every editor fails
   - Google Imagen available for concept generation only, not the fidelity-critical default path
 - LLM gateway for marketing copy:
@@ -174,18 +174,17 @@ DATABASE_URL=sqlite:///./app.db
 STORAGE_DIR=storage
 LOG_LEVEL=INFO
 
-# Recommended free-tier demo path
-VISUAL_PROVIDER_CHAIN=cloudflare_flux,original
+# Default path: Cloudflare first, optional Replicate fallback when credits are available
+VISUAL_PROVIDER_CHAIN=cloudflare_flux,cloudflare_inpaint,replicate_flux,original
 CLOUDFLARE_ACCOUNT_ID=
 CLOUDFLARE_API_TOKEN=
 CLOUDFLARE_IMAGE_MODEL=@cf/black-forest-labs/flux-2-klein-4b
+CLOUDFLARE_INPAINT_MODEL=@cf/runwayml/stable-diffusion-v1-5-inpainting
 CLOUDFLARE_IMAGE_WIDTH=1024
 CLOUDFLARE_IMAGE_HEIGHT=1024
 
-# Optional additional direct editors for a paid/production fallback chain
+# Gemini key is used for grounded product-description text and optional paid Imagen concept generation.
 GEMINI_API_KEY=
-GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
-GEMINI_IMAGE_MODEL_CHAIN=gemini-2.5-flash-image,gemini-3-pro-image-preview
 GOOGLE_IMAGEN_MODEL=imagen-4.0-generate-001
 GOOGLE_IMAGEN_ASPECT_RATIO=1:1
 
@@ -239,31 +238,41 @@ Cloudflare-specific note: the app stores the original uploaded file for review a
 
 ## Generation Strategy
 
-For a free-tier demo, use Cloudflare Workers AI FLUX.2 Klein 4B as the single generative editor:
+For the configured demo path, use Cloudflare Workers AI FLUX.2 Klein 4B as the primary editor, masked Stable Diffusion Inpainting as a conservative background fallback, and leave Replicate installed as a later fallback for when credits become available:
 
 ```env
-VISUAL_PROVIDER_CHAIN=cloudflare_flux,original
+VISUAL_PROVIDER_CHAIN=cloudflare_flux,cloudflare_inpaint,replicate_flux,original
 CLOUDFLARE_ACCOUNT_ID=your_account_id
 CLOUDFLARE_API_TOKEN=your_workers_ai_token
 CLOUDFLARE_IMAGE_MODEL=@cf/black-forest-labs/flux-2-klein-4b
+CLOUDFLARE_INPAINT_MODEL=@cf/runwayml/stable-diffusion-v1-5-inpainting
+REPLICATE_API_TOKEN=your_replicate_token
+REPLICATE_FLUX_MODEL_CHAIN=black-forest-labs/flux-kontext-max,black-forest-labs/flux-kontext-pro
 ```
 
 Create a Cloudflare API token with Workers AI permission. The provider sends the product photo as `input_image_0` and, when supplied, the scene reference as `input_image_1`. Workers AI requires these input images below `512x512`, so the integration prepares compact PNG input copies for inference while retaining the original upload.
 
 Image editing models can still reinterpret fine material detail on ordinary JPG, WEBP, or opaque PNG inputs. For products where surface condition, stitching, labels, or cracks must be exact, upload a high-resolution transparent-background PNG cutout. The Cloudflare path then fits and overlays that source product layer over the generated scene and reports `source_product_overlay` in the provider result.
 
-For a production fallback chain with paid editors configured, keep all direct image editing ahead of concept generators:
+Fallback behavior:
+
+- With a transparent-background PNG, if FLUX fails, `cloudflare_inpaint` builds a mask from the transparent background, generates only the surrounding scene, and composites the uploaded product layer back over the result.
+- With JPG, WEBP, or opaque PNG input, `cloudflare_inpaint` deliberately does not run because there is no reliable product mask; the chain can try `replicate_flux`.
+- `replicate_flux` remains installed as an optional fallback. While the account has no credit, it can fail with HTTP `402` and the chain proceeds safely to `original_fallback`.
+- This fallback handles provider failure. Poor but technically successful FLUX outputs must still be rejected through Evaluation/Review or regenerated.
+
+The default configured chain is also ready for paid Replicate use when its credit is restored:
 
 ```env
-VISUAL_PROVIDER_CHAIN=cloudflare_flux,replicate_flux,gemini_image,original
+VISUAL_PROVIDER_CHAIN=cloudflare_flux,cloudflare_inpaint,replicate_flux,original
 REPLICATE_FLUX_MODEL_CHAIN=black-forest-labs/flux-kontext-max,black-forest-labs/flux-kontext-pro
 ```
 
 - Cloudflare FLUX.2 Klein edits the supplied product into the selected scene and is the simplest demo path.
+- Cloudflare Inpainting replaces background-only regions from a transparent PNG mask and restores the source product layer.
 - With only a product photo, the gateway tries FLUX Kontext Max for quality, then Kontext Pro.
 - With a product photo and a style reference, it tries FLUX Multi-Image Kontext Max, then Pro, so the product remains image 1 and the reference is used for scene direction.
-- If Replicate is unavailable, Gemini Image can attempt direct editing when its quota is active.
-- If all generative editors fail, `original` returns the original uploaded image for safe review instead of inventing a replacement product.
+- If Replicate is unavailable or out of credit, `original` returns the original uploaded image for safe review instead of inventing a replacement product.
 
 Google Imagen can still be tried for visual concept exploration:
 
@@ -295,7 +304,7 @@ The Evaluation workspace provides the deeper image-generation assessment. It sav
 
 Approval policy:
 
-1. `cloudflare_flux`, `gemini_image`, or `replicate_flux` outputs without `source_product_overlay` are recorded as unverified AI edits.
+1. `cloudflare_flux` or `replicate_flux` outputs without `source_product_overlay` are recorded as unverified AI edits.
 2. A reviewer must compare product shape, logo or label, color, material surface, and visible condition with the original before approval.
 3. Any changed surface detail, such as introduced cracks, fails product identity validation regardless of visual score.
 4. Export is available only after approval.

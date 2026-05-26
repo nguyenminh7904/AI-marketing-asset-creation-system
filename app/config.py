@@ -10,17 +10,16 @@ class Settings(BaseSettings):
     STORAGE_DIR: str = "storage"
     LOG_LEVEL: str = "INFO"
 
-    VISUAL_PROVIDER_CHAIN: str = "cloudflare_flux,original"
+    VISUAL_PROVIDER_CHAIN: str = "cloudflare_flux,cloudflare_inpaint,replicate_flux,original"
 
     CLOUDFLARE_ACCOUNT_ID: str | None = None
     CLOUDFLARE_API_TOKEN: str | None = None
     CLOUDFLARE_IMAGE_MODEL: str = "@cf/black-forest-labs/flux-2-klein-4b"
+    CLOUDFLARE_INPAINT_MODEL: str = "@cf/runwayml/stable-diffusion-v1-5-inpainting"
     CLOUDFLARE_IMAGE_WIDTH: int = 1024
     CLOUDFLARE_IMAGE_HEIGHT: int = 1024
 
     GEMINI_API_KEY: str | None = None
-    GEMINI_IMAGE_MODEL: str = "gemini-2.5-flash-image"
-    GEMINI_IMAGE_MODEL_CHAIN: str = "gemini-2.5-flash-image,gemini-3-pro-image-preview"
     GOOGLE_IMAGEN_MODEL: str = "imagen-4.0-generate-001"
     GOOGLE_IMAGEN_ASPECT_RATIO: str = "1:1"
 

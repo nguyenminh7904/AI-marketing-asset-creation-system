@@ -14,6 +14,7 @@ from app.services.llm_gateway import LLMGateway
 from app.services.llm_providers.gemini_text_provider import GeminiTextProvider
 from app.services.scoring_service import ScoringService
 from app.services.visual_providers.cloudflare_flux_provider import CloudflareFluxProvider
+from app.services.visual_providers.cloudflare_inpaint_provider import CloudflareInpaintProvider
 from app.services.visual_providers.replicate_flux_provider import ReplicateFluxProvider
 from app.services.visual_service import VisualService
 from app.main import (
@@ -47,6 +48,23 @@ def test_visual_service_returns_original_when_editor_is_unavailable(tmp_path, mo
 
     assert result["provider"] == "original_fallback"
     assert Image.open(result["image_path"]).size == (60, 60)
+
+
+def test_default_visual_chain_keeps_replicate_as_optional_fallback(monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "VISUAL_PROVIDER_CHAIN",
+        "cloudflare_flux,cloudflare_inpaint,replicate_flux,original",
+    )
+
+    providers = [provider.name for provider in VisualService().providers]
+
+    assert providers == [
+        "cloudflare_flux",
+        "cloudflare_inpaint",
+        "replicate_flux",
+        "original",
+    ]
 
 
 def test_cloudflare_flux_uses_product_and_scene_reference(tmp_path, monkeypatch):
@@ -166,6 +184,83 @@ def test_cloudflare_missing_credentials_falls_back_to_original(tmp_path, monkeyp
         product_image_path=str(product_path),
         reference_image_path=None,
         visual_prompt="Place the item on a neutral surface.",
+        num_variants=1,
+    )[0]
+
+    assert result["provider"] == "original_fallback"
+
+
+def test_cloudflare_inpaint_masks_background_and_restores_product_layer(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "CLOUDFLARE_ACCOUNT_ID", "account-id")
+    monkeypatch.setattr(settings, "CLOUDFLARE_API_TOKEN", "test-token")
+    monkeypatch.setattr(
+        settings,
+        "CLOUDFLARE_INPAINT_MODEL",
+        "@cf/runwayml/stable-diffusion-v1-5-inpainting",
+    )
+    monkeypatch.setattr(settings, "CLOUDFLARE_IMAGE_WIDTH", 256)
+    monkeypatch.setattr(settings, "CLOUDFLARE_IMAGE_HEIGHT", 256)
+    product_path = tmp_path / "transparent_product.png"
+    output_path = tmp_path / "inpaint_output.jpg"
+    product = Image.new("RGBA", (80, 80), (0, 0, 0, 0))
+    for x in range(20, 60):
+        for y in range(18, 62):
+            product.putpixel((x, y), (230, 35, 18, 255))
+    product.save(product_path)
+
+    scene_buffer = BytesIO()
+    Image.new("RGB", (256, 256), (26, 76, 180)).save(scene_buffer, format="PNG")
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+        headers = {"content-type": "image/png"}
+        content = scene_buffer.getvalue()
+
+    def fake_post(url, headers, json, timeout):
+        captured.update(url=url, headers=headers, json=json, timeout=timeout)
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "app.services.visual_providers.cloudflare_inpaint_provider.requests.post",
+        fake_post,
+    )
+
+    result = CloudflareInpaintProvider().generate_variant(
+        asset_id="masked-background",
+        variant_index=0,
+        product_image_path=str(product_path),
+        reference_image_path=None,
+        visual_prompt="Soft ivory studio background.",
+        output_path=str(output_path),
+    )
+
+    assert captured["url"].endswith("/@cf/runwayml/stable-diffusion-v1-5-inpainting")
+    with Image.open(BytesIO(bytes(captured["json"]["mask"]))) as mask:
+        assert mask.getpixel((5, 5)) > 240
+        assert mask.getpixel((128, 128)) < 15
+    with Image.open(output_path).convert("RGB") as output:
+        center = output.getpixel((128, 128))
+        corner = output.getpixel((5, 5))
+    assert center[0] > 190 and center[2] < 50
+    assert corner[2] > 130
+    assert result["provider"].endswith(":source_product_overlay")
+
+
+def test_cloudflare_inpaint_skips_opaque_product_for_original_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "VISUAL_PROVIDER_CHAIN", "cloudflare_inpaint,original")
+    monkeypatch.setattr(settings, "CLOUDFLARE_ACCOUNT_ID", "account-id")
+    monkeypatch.setattr(settings, "CLOUDFLARE_API_TOKEN", "test-token")
+    monkeypatch.setattr(settings, "STORAGE_DIR", str(tmp_path))
+    product_path = tmp_path / "opaque_product.jpg"
+    save_test_image(product_path, (45, 65, 85), (200, 200))
+
+    result = VisualService().generate_variants(
+        asset_id="opaque-safe-fallback",
+        product_image_path=str(product_path),
+        reference_image_path=None,
+        visual_prompt="Clean studio scene.",
         num_variants=1,
     )[0]
 

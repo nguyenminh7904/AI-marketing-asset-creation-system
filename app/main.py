@@ -64,9 +64,8 @@ def health():
         "has_gemini_key": bool(settings.GEMINI_API_KEY),
         "has_replicate_key": bool(settings.REPLICATE_API_TOKEN),
         "cloudflare_image_model": settings.CLOUDFLARE_IMAGE_MODEL,
+        "cloudflare_inpaint_model": settings.CLOUDFLARE_INPAINT_MODEL,
         "cloudflare_image_size": f"{settings.CLOUDFLARE_IMAGE_WIDTH}x{settings.CLOUDFLARE_IMAGE_HEIGHT}",
-        "gemini_image_model": settings.GEMINI_IMAGE_MODEL,
-        "gemini_image_model_chain": settings.GEMINI_IMAGE_MODEL_CHAIN,
         "google_imagen_model": settings.GOOGLE_IMAGEN_MODEL,
         "google_imagen_aspect_ratio": settings.GOOGLE_IMAGEN_ASPECT_RATIO,
         "replicate_flux_model_chain": settings.REPLICATE_FLUX_MODEL_CHAIN,
@@ -463,25 +462,36 @@ def _configuration_warnings() -> list[str]:
     warnings = []
     visual_chain = settings.VISUAL_PROVIDER_CHAIN.lower()
     replicate_token = (settings.REPLICATE_API_TOKEN or "").strip()
-    gemini_image_models = {"gemini-2.5-flash-image", "gemini-3-pro-image-preview"}
     imagen_models = {
         "imagen-4.0-generate-001",
         "imagen-4.0-fast-generate-001",
         "imagen-4.0-ultra-generate-001",
     }
 
-    if "cloudflare_flux" in visual_chain:
+    has_cloudflare_provider = (
+        "cloudflare_flux" in visual_chain or "cloudflare_inpaint" in visual_chain
+    )
+    if has_cloudflare_provider:
         if not settings.CLOUDFLARE_ACCOUNT_ID:
-            warnings.append("cloudflare_flux is enabled but CLOUDFLARE_ACCOUNT_ID is empty.")
+            warnings.append("A Cloudflare image provider is enabled but CLOUDFLARE_ACCOUNT_ID is empty.")
         if not settings.CLOUDFLARE_API_TOKEN:
-            warnings.append("cloudflare_flux is enabled but CLOUDFLARE_API_TOKEN is empty.")
+            warnings.append("A Cloudflare image provider is enabled but CLOUDFLARE_API_TOKEN is empty.")
+        if "original" not in visual_chain and "mock" not in visual_chain:
+            warnings.append("Add original as a final identity-safe fallback if Cloudflare generation fails.")
+
+    if "cloudflare_flux" in visual_chain:
         if settings.CLOUDFLARE_IMAGE_MODEL != "@cf/black-forest-labs/flux-2-klein-4b":
             warnings.append(
                 "CLOUDFLARE_IMAGE_MODEL is not the tested demo editor; "
                 "use @cf/black-forest-labs/flux-2-klein-4b for this workflow."
             )
-        if "original" not in visual_chain and "mock" not in visual_chain:
-            warnings.append("Add original as a final identity-safe fallback if Cloudflare generation fails.")
+
+    if "cloudflare_inpaint" in visual_chain:
+        if settings.CLOUDFLARE_INPAINT_MODEL != "@cf/runwayml/stable-diffusion-v1-5-inpainting":
+            warnings.append(
+                "CLOUDFLARE_INPAINT_MODEL is not the tested masked-background fallback; "
+                "use @cf/runwayml/stable-diffusion-v1-5-inpainting for this workflow."
+            )
 
     if "google_imagen" in visual_chain or "imagen" in visual_chain:
         if not settings.GEMINI_API_KEY:
@@ -493,7 +503,7 @@ def _configuration_warnings() -> list[str]:
             )
         warnings.append(
             "google_imagen is an input-aware text-to-image fallback: it summarizes uploaded images first, "
-            "but it is not pixel-level product editing like Gemini Image or Vertex AI Imagen Editing."
+            "but it is not pixel-level product editing."
         )
         warnings.append(
             "Do not place google_imagen before direct image editors when exact product identity is required."
@@ -508,24 +518,5 @@ def _configuration_warnings() -> list[str]:
             )
         if "original" not in visual_chain and "mock" not in visual_chain:
             warnings.append("Add original as a final identity-safe fallback if all paid image editors fail.")
-
-    if "gemini_image" in visual_chain and not settings.GEMINI_API_KEY:
-        warnings.append("gemini_image is enabled but GEMINI_API_KEY is empty.")
-    elif "gemini_image" in visual_chain:
-        configured_models = [
-            model.strip()
-            for model in (settings.GEMINI_IMAGE_MODEL_CHAIN or settings.GEMINI_IMAGE_MODEL).split(",")
-            if model.strip()
-        ]
-        unknown_models = [model for model in configured_models if model not in gemini_image_models]
-        if unknown_models:
-            warnings.append(
-                "GEMINI_IMAGE_MODEL_CHAIN contains model(s) that do not look like current Gemini image models: "
-                + ", ".join(unknown_models)
-            )
-        warnings.append(
-            "Gemini image 429 errors usually mean project quota, rate limit, or billing allowance is exhausted; "
-            "switching Gemini image models may not bypass account-level quota."
-        )
 
     return warnings

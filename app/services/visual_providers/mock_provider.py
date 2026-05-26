@@ -43,7 +43,7 @@ class MockVisualProvider(VisualProvider):
         bg_rgba.alpha_composite(product, (x, y))
 
         draw_final = ImageDraw.Draw(bg_rgba)
-        draw_final.text((40, 40), "MOCK FALLBACK - use Gemini Image / FLUX for real editing", fill=(255,255,255,255))
+        draw_final.text((40, 40), "MOCK FALLBACK - use Cloudflare / Replicate for real editing", fill=(255,255,255,255))
         draw_final.text((40, 75), f"Variant {variant_index + 1}", fill=(255,255,255,255))
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)

@@ -218,28 +218,29 @@ README.md
 
 Provider improvements:
 
+- Added `cloudflare_inpaint` using `@cf/runwayml/stable-diffusion-v1-5-inpainting` as a background-only fallback for transparent PNG product cutouts.
+- Updated the configured chain to `cloudflare_flux,cloudflare_inpaint,replicate_flux,original`; Replicate remains installed as an optional fallback for when credits are available.
 - Added provider circuit breaker for the current generation run.
 - If a provider fails with quota, billing, authentication, or rate-limit errors, the app skips that provider for the remaining variants in the same run.
 - Added safer provider error logging.
 - Added configuration warnings for likely wrong provider setup.
-- Fixed invalid Gemini image model name.
+- Removed `gemini_image` from the active provider registry and configuration because it is not part of the free image-generation strategy.
 - Added `google_imagen` visual provider through the Gemini API Imagen endpoint.
 
-Current Gemini image model:
+Current configured visual provider chain:
 
 ```env
-GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
-GEMINI_IMAGE_MODEL_CHAIN=gemini-2.5-flash-image,gemini-3-pro-image-preview
+VISUAL_PROVIDER_CHAIN=cloudflare_flux,cloudflare_inpaint,replicate_flux,original
 ```
 
-Known current Gemini image model options:
+Optional Replicate fallback settings:
 
-```text
-gemini-2.5-flash-image
-gemini-3-pro-image-preview
+```env
+REPLICATE_FLUX_MODEL_CHAIN=black-forest-labs/flux-kontext-max,black-forest-labs/flux-kontext-pro
+REPLICATE_FLUX_REFERENCE_MODEL_CHAIN=flux-kontext-apps/multi-image-kontext-max,flux-kontext-apps/multi-image-kontext-pro
 ```
 
-The app now supports `GEMINI_IMAGE_MODEL_CHAIN`, so the `gemini_image` provider can try more than one Gemini image model before falling back to the next visual provider.
+When Replicate credit is exhausted, its existing `402`/rate-limit handling allows the chain to proceed to `original` without removing the provider implementation.
 
 Google Imagen settings:
 
@@ -249,7 +250,7 @@ GOOGLE_IMAGEN_MODEL=imagen-4.0-generate-001
 GOOGLE_IMAGEN_ASPECT_RATIO=1:1
 ```
 
-Important limitation: `google_imagen` is an input-aware text-to-image fallback in this app. It uses Gemini Text/Vision to summarize uploaded product/reference images, then sends those summaries into Imagen. This is useful as another fallback, but it is not pixel-level product editing like Gemini Image/Nano Banana or Vertex AI Imagen Editing.
+Important limitation: `google_imagen` is an optional input-aware text-to-image concept generator in this app. It uses Gemini Text/Vision to summarize uploaded product/reference images, then sends those summaries into Imagen. It is not in the default provider chain and is not intended for exact product editing.
 
 ## 10. Evaluation Framework
 
@@ -277,10 +278,10 @@ The Streamlit app now includes an image-model benchmark in Evaluation with side-
 
 ## 11. Environment Guidance
 
-For real image generation with Gemini and Replicate:
+For the configured Cloudflare path with Replicate retained as an optional fallback:
 
 ```env
-VISUAL_PROVIDER_CHAIN=gemini_image,replicate_flux,mock
+VISUAL_PROVIDER_CHAIN=cloudflare_flux,cloudflare_inpaint,replicate_flux,original
 LLM_PROVIDER_CHAIN=gemini_text,mock
 ```
 
@@ -298,9 +299,9 @@ VISUAL_PROVIDER_CHAIN=mock
 LLM_PROVIDER_CHAIN=gemini_text,mock
 ```
 
-## 12. Gemini 429 Confirmation
+## 12. Retired Gemini Image Provider Logs
 
-Yes, the local logs confirm that the Gemini image provider returned:
+Earlier local logs confirmed that the former `gemini_image` provider returned:
 
 ```text
 provider=gemini_image
@@ -321,8 +322,9 @@ Interpretation:
 - `RESOURCE_EXHAUSTED` means the configured Google project/key has exhausted quota, rate limit, or billing allowance for that model.
 - This is not the same as a frontend bug.
 - This is not the same as Replicate failing.
+- The `gemini_image` visual provider has now been removed from the configured/registered image-generation path; Gemini text analysis remains supported separately.
 
-In the latest logged run:
+In that earlier logged run:
 
 ```text
 gemini_image -> 429 RESOURCE_EXHAUSTED
@@ -331,7 +333,7 @@ mock -> success
 gemini_text -> success
 ```
 
-So the app completed successfully, but the generated visual came from the mock fallback, while the marketing text came from Gemini Text.
+That earlier app run completed with a mock visual fallback and Gemini Text copy. The current image chain now uses Cloudflare providers, optional Replicate fallback, then the original image fallback.
 
 ## 13. Remaining Production Gaps
 
