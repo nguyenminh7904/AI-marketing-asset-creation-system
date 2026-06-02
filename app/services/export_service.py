@@ -12,7 +12,7 @@ class ExportService:
         zip_path = export_dir / f"{asset['id']}_reference_editing_asset.zip"
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-            best_path = Path(asset["best_image_path"])
+            best_path = Path(asset.get("selected_image_path") or asset["best_image_path"])
             if best_path.exists():
                 z.write(best_path, arcname="best_image.jpg")
 
@@ -36,6 +36,9 @@ class ExportService:
                 "quality_report.json",
                 json.dumps(asset.get("quality_report") or {}, ensure_ascii=False, indent=2),
             )
+            claim_safety = asset.get("claim_safety") or (asset.get("channel_outputs") or {}).get("claim_safety")
+            if claim_safety:
+                z.writestr("claim_safety.json", json.dumps(claim_safety, ensure_ascii=False, indent=2))
             z.writestr(
                 "caption.txt",
                 f"{asset.get('caption') or ''}\n\n{' '.join(asset.get('hashtags') or [])}",
@@ -63,6 +66,9 @@ class ExportService:
             "language",
             "tone",
             "compliance_notes",
+            "scene_direction",
+            "identity_preservation",
+            "claim_safety",
         ]
         return {key: asset.get(key) for key in keys}
 

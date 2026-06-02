@@ -1,16 +1,21 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-    APP_NAME: str = "AI Product Studio Reference Editing"
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=PROJECT_ROOT / ".env", env_file_encoding="utf-8")
+
+    APP_NAME: str = "AI Marketing Asset Creation System"
     ENV: str = "dev"
     DATABASE_URL: str = "sqlite:///./app.db"
     STORAGE_DIR: str = "storage"
     LOG_LEVEL: str = "INFO"
 
-    VISUAL_PROVIDER_CHAIN: str = "cloudflare_flux,cloudflare_inpaint,replicate_flux,original"
+    VISUAL_PROVIDER_CHAIN: str = "replicate_flux,cloudflare_flux,cloudflare_inpaint,original"
 
     CLOUDFLARE_ACCOUNT_ID: str | None = None
     CLOUDFLARE_API_TOKEN: str | None = None

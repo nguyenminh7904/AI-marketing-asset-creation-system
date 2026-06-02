@@ -1,6 +1,6 @@
-# AI Product Studio
+# AI Marketing Asset Creation System
 
-AI Product Studio is a campaign workspace for small fashion sellers. It turns a raw product photo and campaign brief into reviewable marketing assets: edited product visuals, platform-specific copy, quality scoring, human review, and exportable campaign packages.
+AI Marketing Asset Creation System turns a raw product photo into a reviewable marketing package: edited product visuals, platform-specific copy, quality scoring, human review, and exportable campaign assets.
 
 The project is designed as a graduation-level marketing technology product, not only an API demo.
 
@@ -27,7 +27,7 @@ Monitoring: health diagnostics, provider logs, audit events, and approved export
 | Retrieval | Loads uploaded visual references and saved asset/history records for generation, review, evaluation, and export. | This is application asset retrieval, not semantic RAG or vector retrieval. |
 | LLM / GenAI | Uses Cloudflare Workers AI FLUX.2 Klein 4B for image editing and Gemini text generation for marketing copy. | Provider gateways expose configured fallback chains. |
 | Validation | Computes technical screen indicators, records image-model evaluations and identity assurance, requires reviewer verification for unverified AI edits, and blocks export until approval. | Technical signals are not proof that an opaque product image is unchanged. |
-| User | Provides a minimal one-click Studio, optional detail controls, Review, Library, and Evaluation workspaces. | A reviewer must compare the product before approving ordinary AI-edited outputs. |
+| User | Provides a preset-driven Studio, optional advanced controls, Review, Library, and Evaluation workspaces. | A reviewer must compare the product before approving ordinary AI-edited outputs. |
 | Monitoring | Records application/provider logs, configuration warnings, asset status, audit events, and export history. | Suitable for demo operation; no external observability dashboard is included. |
 
 ## Demonstrated Strengths
@@ -55,8 +55,8 @@ Earlier experimental logs also show Google Imagen rejecting generation on an unp
 
 ## Core Features
 
-- Minimal Studio workflow: upload one product image, choose a scene, and click `Generate picture`.
-- Twelve professional background and lifestyle templates including clean catalogue, soft daylight, travertine luxury, midnight spotlight, botanical, vanity, editorial, gift, travel, urban, summer, and festive settings.
+- Guided Studio workflow: choose a campaign preset, upload one product image, and click `Generate Marketing Asset`.
+ - Six campaign presets including Luxury Instagram, Clean E-commerce, Premium Facebook, Minimal Studio, Seasonal Campaign, and Product Launch.
 - Product-identity lock prompts direct image-editing providers to preserve visible design, color, logo/label, text, texture, hardware, pattern, packaging, and condition while changing only the scene and lighting.
 - Automatic source-product overlay for transparent-background PNG uploads, retaining the uploaded product layer over the generated scene instead of accepting regenerated product pixels.
 - Optional controls for a style reference, seller details, language, custom direction, and additional variations are kept out of the primary flow.
@@ -111,6 +111,26 @@ Earlier experimental logs also show Google Imagen rejecting generation on an unp
 - Export package containing images, campaign brief, channel copy, quality report, metadata, and reviewer notes.
 - Built-in evaluation rubric for thesis/product assessment.
 
+## Optional Reference Photo Guidance
+
+The Studio supports an optional reference photo in addition to the required product photo.
+
+- The product photo is the identity source for the item being sold.
+- The reference photo is only used for scene, lighting, layout, pose, background mood, or display style.
+- The default workflow still works with just a product photo, product name, and campaign preset.
+- The prompt builder keeps product identity protection locked above reference guidance.
+- Providers that support multiple image inputs can use the reference photo directly; otherwise it remains prompt guidance and stored metadata.
+
+## Multiple Variant Generation
+
+The Studio can generate multiple visual options from the same campaign brief so the user can compare and choose the strongest marketing asset.
+
+- The default is 3 variants, with 1 to 4 variants supported.
+- All variants keep the same product identity lock and campaign brief.
+- Each variant only changes composition, lighting, mood, and scene styling.
+- The UI marks the highest-scoring option as recommended, but the user still manually selects the final variant.
+- Only the selected variant goes to Review and Export.
+
 ## Architecture
 
 ```text
@@ -139,7 +159,7 @@ docs/evaluation_framework.md
 ## Setup
 
 ```bash
-cd ai-product-studio-reference-editing
+cd GenAI_for_marketing_business
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
@@ -156,7 +176,7 @@ uvicorn app.main:app --reload
 ## Run UI
 
 ```bash
-streamlit run ui/streamlit_app.py
+python -m streamlit run ui/streamlit_app.py
 ```
 
 Open:
@@ -167,41 +187,7 @@ http://localhost:8501
 
 ## Environment
 
-```env
-APP_NAME=AI Product Studio Reference Editing
-ENV=dev
-DATABASE_URL=sqlite:///./app.db
-STORAGE_DIR=storage
-LOG_LEVEL=INFO
-
-# Default path: Cloudflare first, optional Replicate fallback when credits are available
-VISUAL_PROVIDER_CHAIN=cloudflare_flux,cloudflare_inpaint,replicate_flux,original
-CLOUDFLARE_ACCOUNT_ID=
-CLOUDFLARE_API_TOKEN=
-CLOUDFLARE_IMAGE_MODEL=@cf/black-forest-labs/flux-2-klein-4b
-CLOUDFLARE_INPAINT_MODEL=@cf/runwayml/stable-diffusion-v1-5-inpainting
-CLOUDFLARE_IMAGE_WIDTH=1024
-CLOUDFLARE_IMAGE_HEIGHT=1024
-
-# Gemini key is used for grounded product-description text and optional paid Imagen concept generation.
-GEMINI_API_KEY=
-GOOGLE_IMAGEN_MODEL=imagen-4.0-generate-001
-GOOGLE_IMAGEN_ASPECT_RATIO=1:1
-
-REPLICATE_API_TOKEN=
-REPLICATE_FLUX_MODEL=black-forest-labs/flux-kontext-pro
-REPLICATE_FLUX_MODEL_CHAIN=black-forest-labs/flux-kontext-max,black-forest-labs/flux-kontext-pro
-REPLICATE_FLUX_REFERENCE_MODEL_CHAIN=flux-kontext-apps/multi-image-kontext-max,flux-kontext-apps/multi-image-kontext-pro
-REPLICATE_FLUX_ASPECT_RATIO=match_input_image
-
-LLM_PROVIDER_CHAIN=gemini_text,mock
-GEMINI_TEXT_MODEL=gemini-2.5-flash-lite
-GEMINI_TEXT_MODEL_CHAIN=gemini-2.5-flash-lite,gemini-2.5-flash
-
-DEFAULT_VARIANTS=2
-REQUEST_TIMEOUT_SECONDS=120
-MAX_UPLOAD_MB=12
-```
+See [.env.example](.env.example) for the current placeholder set. The UI now loads `.env` automatically, so the same file can be used for backend and Streamlit runs.
 
 For offline or classroom demos, use:
 

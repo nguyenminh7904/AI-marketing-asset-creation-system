@@ -12,7 +12,8 @@ from app.services.visual_providers.original_provider import OriginalImageProvide
 
 
 class VisualService:
-    def __init__(self):
+    def __init__(self, provider_chain: str | None = None):
+        self.provider_chain = provider_chain or settings.VISUAL_PROVIDER_CHAIN
         self.providers = self._build_provider_chain()
 
     def _build_provider_chain(self):
@@ -27,7 +28,7 @@ class VisualService:
         }
 
         providers = []
-        for name in settings.VISUAL_PROVIDER_CHAIN.split(","):
+        for name in self.provider_chain.split(","):
             name = name.strip().lower()
             if name in registry:
                 providers.append(registry[name]())
@@ -44,21 +45,28 @@ class VisualService:
         reference_image_path: str | None,
         visual_prompt: str,
         num_variants: int,
+        variant_prompts: list[str] | None = None,
+        variant_directions: list[str] | None = None,
     ) -> list[dict]:
         results = []
         disabled_providers = {}
 
         for i in range(num_variants):
             output_path = str(Path(settings.STORAGE_DIR) / "output" / f"{asset_id}_v{i + 1}.jpg")
+            variant_prompt = visual_prompt
+            if variant_prompts and i < len(variant_prompts) and variant_prompts[i]:
+                variant_prompt = variant_prompts[i]
             result = self._generate_one(
                 asset_id,
                 i,
                 product_image_path,
                 reference_image_path,
-                visual_prompt,
+                variant_prompt,
                 output_path,
                 disabled_providers,
             )
+            if variant_directions and i < len(variant_directions):
+                result["variant_direction"] = variant_directions[i]
             results.append(result)
 
         return results

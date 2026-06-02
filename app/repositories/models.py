@@ -10,6 +10,8 @@ class Asset(Base):
     product_name = Column(String, nullable=True)
     campaign_name = Column(String, nullable=True)
     brand_name = Column(String, nullable=True)
+    product_condition = Column(Text, nullable=True)
+    key_product_facts = Column(Text, nullable=True)
     target_audience = Column(Text, nullable=True)
     customer_persona = Column(Text, nullable=True)
     platform = Column(String, nullable=True)
@@ -21,12 +23,19 @@ class Asset(Base):
     offer = Column(String, nullable=True)
     language = Column(String, nullable=True)
     compliance_notes = Column(Text, nullable=True)
+    scene_direction = Column(Text, nullable=True)
+    identity_preservation = Column(Text, nullable=True)
+    claim_safety = Column(Text, nullable=True)
+    campaign_brief_json = Column(Text, nullable=True)
+    prompt_controls_json = Column(Text, nullable=True)
+    review_checklist_json = Column(Text, nullable=True)
 
     status = Column(String, index=True, default="pending_review")
 
     product_image_path = Column(Text, nullable=False)
     reference_image_path = Column(Text, nullable=True)
     best_image_path = Column(Text, nullable=True)
+    selected_variant_id = Column(String, nullable=True)
     variants_json = Column(Text, nullable=True)
 
     best_variant_id = Column(String, nullable=True)

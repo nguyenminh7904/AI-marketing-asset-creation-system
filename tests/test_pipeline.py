@@ -18,7 +18,7 @@ def test_pipeline_runs(tmp_path, monkeypatch):
         target_audience="students",
         visual_prompt="Put this shirt naturally on a grass field.",
         content_prompt="Write caption",
-        num_variants=1,
+        num_variants=3,
     )
 
     result = ProductPromotionPipeline().run(str(product_path), None, req)
@@ -26,3 +26,6 @@ def test_pipeline_runs(tmp_path, monkeypatch):
     if result.status == "generated":
         assert result.channel_outputs
         assert result.quality_report
+        assert len(result.variants) == 3
+        assert result.recommended_variant_id
+        assert result.selected_variant_id is None

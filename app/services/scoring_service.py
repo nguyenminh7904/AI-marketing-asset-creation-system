@@ -26,11 +26,15 @@ class ScoringService:
                 provider=variant.get("provider"),
                 technical_diagnostics=technical_diagnostics,
             )
+            quality_score = self._quality_status(scores.get("final_score", 0.0))
             scored.append(
                 {
                     **variant,
                     "scores": scores,
                     "technical_diagnostics": technical_diagnostics,
+                    "quality_status": quality_score[0],
+                    "notes": quality_score[1],
+                    "display_score": quality_score[2],
                 }
             )
 
@@ -145,6 +149,25 @@ class ScoringService:
             "source_layer_retained_indicator": 1.0 if source_layer_retained else 0.0,
             "final_score": round(min(final_score, 1.0), 4),
         }
+
+    def _quality_status(self, final_score: float) -> tuple[str, list[str], int]:
+        score = max(0, min(100, int(round(float(final_score) * 100))))
+        if score >= 80:
+            status = "Ready for review"
+        elif score >= 60:
+            status = "Usable with inspection"
+        else:
+            status = "Needs regeneration"
+
+        notes = []
+        if score < 60:
+            notes.append("Inspect the scene before review; the output may need regeneration.")
+        elif score < 80:
+            notes.append("Usable, but compare details carefully before approval.")
+        else:
+            notes.append("Strong candidate for review.")
+
+        return status, notes, score
 
     def _technical_diagnostics(
         self,

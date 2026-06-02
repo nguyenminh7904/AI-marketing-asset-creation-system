@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from app.config import settings
 from app.core.schemas import ImageEvaluationRequest
 from app.database import Base
+from app.repositories.asset_repository import AssetRepository
 from app.repositories.models import Asset
 from app.services.llm_gateway import LLMGateway
 from app.services.llm_providers.gemini_text_provider import GeminiTextProvider
@@ -29,6 +30,11 @@ from app.main import (
 def save_test_image(path, color, size=(60, 60)):
     Image.new("RGB", size, color).save(path)
     # Ensure the file is fully written before proceeding, which can be an issue on some filesystems
+
+
+def test_cloudflare_settings_are_loaded_from_env_file():
+    assert settings.CLOUDFLARE_ACCOUNT_ID
+    assert settings.CLOUDFLARE_API_TOKEN
 
 
 def test_visual_service_returns_original_when_editor_is_unavailable(tmp_path, monkeypatch):
@@ -654,3 +660,53 @@ def test_export_requires_approved_asset():
     assert not _can_export_asset({"status": "needs_revision"})
     assert _can_export_asset({"status": "approved"})
     assert _can_export_asset({"status": "exported"})
+
+
+def test_asset_repository_tracks_selected_variant(tmp_path):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    repo = AssetRepository(session)
+
+    repo.create(
+        {
+            "id": "asset-variants",
+            "product_name": "Variant Product",
+            "product_image_path": str(tmp_path / "product.jpg"),
+            "variants_json": json.dumps(
+                [
+                    {
+                        "variant_id": "v1",
+                        "image_path": str(tmp_path / "v1.jpg"),
+                        "provider": "mock",
+                        "scores": {"final_score": 0.8},
+                    },
+                    {
+                        "variant_id": "v2",
+                        "image_path": str(tmp_path / "v2.jpg"),
+                        "provider": "mock",
+                        "scores": {"final_score": 0.9},
+                    },
+                ],
+                ensure_ascii=False,
+            ),
+            "best_variant_id": "v2",
+            "best_image_path": str(tmp_path / "v2.jpg"),
+            "best_score": 0.9,
+        }
+    )
+
+    repo.update_review(
+        asset_id="asset-variants",
+        status="approved",
+        reviewer_note="Selected v1 for review",
+        selected_variant_id="v1",
+    )
+
+    asset = repo.get("asset-variants")
+    assert asset is not None
+    asset_dict = repo.to_dict(asset)
+    assert asset_dict["recommended_variant_id"] == "v2"
+    assert asset_dict["selected_variant_id"] == "v1"
+    assert asset_dict["selected_variant_number"] == 1

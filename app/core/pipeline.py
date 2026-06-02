@@ -9,8 +9,8 @@ from app.services.llm_gateway import LLMGateway
 
 
 class ProductPromotionPipeline:
-    def __init__(self):
-        self.visual_service = VisualService()
+    def __init__(self, visual_provider_chain: str | None = None):
+        self.visual_service = VisualService(visual_provider_chain)
         self.scoring_service = ScoringService()
         self.llm_service = LLMGateway()
 
@@ -22,7 +22,18 @@ class ProductPromotionPipeline:
     ) -> GenerationResult:
         asset_id = str(uuid4())
         campaign_context = self._campaign_context(request)
-        enriched_visual_prompt = self._build_visual_prompt(request, campaign_context)
+        variant_directions = self._variant_directions(request.num_variants)
+        variant_prompts = [
+            self._build_visual_prompt(
+                request,
+                campaign_context,
+                variant_index=index,
+                total_variants=request.num_variants,
+                variant_direction=variant_directions[index],
+            )
+            for index in range(request.num_variants)
+        ]
+        enriched_visual_prompt = variant_prompts[0]
 
         try:
             logger.info(f"Pipeline started | asset_id={asset_id}")
@@ -33,6 +44,8 @@ class ProductPromotionPipeline:
                 reference_image_path=reference_image_path,
                 visual_prompt=enriched_visual_prompt,
                 num_variants=request.num_variants,
+                variant_prompts=variant_prompts,
+                variant_directions=variant_directions,
             )
 
             scored_variants = self.scoring_service.score_variants(
@@ -70,9 +83,15 @@ class ProductPromotionPipeline:
                 status=GENERATED,
                 product_image_path=product_image_path,
                 reference_image_path=reference_image_path,
+                campaign_preset=request.campaign_preset,
+                reference_usage=request.reference_usage,
+                custom_scene_prompt=request.custom_scene_prompt,
+                use_campaign_preset=request.use_campaign_preset,
                 best_image_path=best["image_path"],
-                variants=[VariantResult(**v) for v in scored_variants],
+                variants=[VariantResult(**{**v, "is_recommended": v["variant_id"] == best["variant_id"], "is_selected": False}) for v in scored_variants],
                 best_variant_id=best["variant_id"],
+                recommended_variant_id=best["variant_id"],
+                selected_variant_id=None,
                 visual_provider_used=visual_provider_used,
                 llm_provider_used=llm_provider_used,
                 description=content["description"],
@@ -89,9 +108,15 @@ class ProductPromotionPipeline:
                 status=FAILED,
                 product_image_path=product_image_path,
                 reference_image_path=reference_image_path,
+                campaign_preset=request.campaign_preset,
+                reference_usage=request.reference_usage,
+                custom_scene_prompt=request.custom_scene_prompt,
+                use_campaign_preset=request.use_campaign_preset,
                 best_image_path="",
                 variants=[],
                 best_variant_id="",
+                recommended_variant_id=None,
+                selected_variant_id=None,
                 visual_provider_used="",
                 llm_provider_used="",
                 description="",
@@ -119,6 +144,29 @@ class ProductPromotionPipeline:
             "compliance_notes": request.compliance_notes,
         }
 
-    def _build_visual_prompt(self, request: GenerationRequest, campaign_context: dict) -> str:
+    def _build_visual_prompt(
+        self,
+        request: GenerationRequest,
+        campaign_context: dict,
+        variant_index: int = 0,
+        total_variants: int = 1,
+        variant_direction: str | None = None,
+    ) -> str:
         # Image editors need a controlled visual specification; sales metadata causes prompt drift.
-        return request.visual_prompt
+        prompt = request.visual_prompt
+        if variant_direction:
+            prompt += (
+                "\n\nLayer 7 - Variant Direction\n"
+                f"Variant {variant_index + 1} of {total_variants}: {variant_direction}\n"
+                "This direction may change composition, lighting, mood, and scene styling only."
+            )
+        return prompt
+
+    def _variant_directions(self, num_variants: int) -> list[str]:
+        directions = [
+            "Create a clean, balanced campaign visual with strong product clarity.",
+            "Create a more premium, luxury-oriented version while keeping product identity unchanged.",
+            "Create a more social-commerce-friendly version with stronger visual appeal and clear product focus.",
+            "Create a more ecommerce-ready version with simple background and strong product visibility.",
+        ]
+        return directions[:num_variants]

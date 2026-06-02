@@ -1,17 +1,20 @@
 import json
 import re
 from collections import Counter
+from io import BytesIO
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
+from PIL import Image, ImageDraw, ImageFont
 
 from app.config import settings
 from app.logging_config import setup_logging
 from app.database import get_db, init_db
-from app.core.schemas import GenerationRequest, ImageEvaluationRequest, ReviewRequest
+from app.core.schemas import GenerationRequest, ImageEvaluationRequest, ReviewRequest, VariantSelectionRequest
 from app.core.status import APPROVED, EXPORTED, REVIEW_STATUSES
 from app.core.pipeline import ProductPromotionPipeline
 from app.repositories.asset_repository import AssetRepository
@@ -84,7 +87,10 @@ async def generate_asset(
     reference_image: UploadFile | None = File(None),
     product_name: str | None = Form(None),
     campaign_name: str | None = Form(None),
+    campaign_preset: str | None = Form(None),
     brand_name: str | None = Form(None),
+    product_condition: str | None = Form(None),
+    key_product_facts: str | None = Form(None),
     target_audience: str | None = Form(None),
     customer_persona: str | None = Form(None),
     platform: str = Form("Instagram"),
@@ -96,6 +102,16 @@ async def generate_asset(
     offer: str | None = Form(None),
     language: str = Form("Vietnamese"),
     compliance_notes: str | None = Form(None),
+    scene_direction: str | None = Form(None),
+    identity_preservation: str | None = Form(None),
+    claim_safety: str | None = Form(None),
+    use_campaign_preset: bool = Form(True),
+    custom_scene_prompt: str | None = Form(None),
+    reference_usage: str | None = Form(None),
+    visual_provider_chain: str | None = Form(None),
+    campaign_brief_json: str | None = Form(None),
+    prompt_controls_json: str | None = Form(None),
+    review_checklist_json: str | None = Form(None),
     visual_prompt: str = Form(...),
     content_prompt: str = Form(...),
     tone: str = Form("premium, emotional, product-selling"),
@@ -111,7 +127,10 @@ async def generate_asset(
     request = GenerationRequest(
         product_name=product_name,
         campaign_name=campaign_name,
+        campaign_preset=campaign_preset,
         brand_name=brand_name,
+        product_condition=product_condition,
+        key_product_facts=key_product_facts,
         target_audience=target_audience,
         customer_persona=customer_persona,
         platform=platform,
@@ -123,13 +142,20 @@ async def generate_asset(
         offer=offer,
         language=language,
         compliance_notes=compliance_notes,
+        scene_direction=scene_direction,
+        identity_preservation=identity_preservation,
+        claim_safety=claim_safety,
+        use_campaign_preset=use_campaign_preset,
+        custom_scene_prompt=custom_scene_prompt,
+        reference_usage=reference_usage,
+        visual_provider_chain=visual_provider_chain,
         visual_prompt=visual_prompt,
         content_prompt=content_prompt,
         tone=tone,
         num_variants=num_variants,
     )
 
-    result = ProductPromotionPipeline().run(
+    result = ProductPromotionPipeline(visual_provider_chain=request.visual_provider_chain).run(
         product_image_path=str(product_path),
         reference_image_path=reference_path,
         request=request,
@@ -145,7 +171,10 @@ async def generate_asset(
         "id": result.asset_id,
         "product_name": product_name,
         "campaign_name": campaign_name,
+        "campaign_preset": campaign_preset,
         "brand_name": brand_name,
+        "product_condition": product_condition,
+        "key_product_facts": key_product_facts,
         "target_audience": target_audience,
         "customer_persona": customer_persona,
         "platform": platform,
@@ -157,6 +186,15 @@ async def generate_asset(
         "offer": offer,
         "language": language,
         "compliance_notes": compliance_notes,
+        "scene_direction": scene_direction,
+        "identity_preservation": identity_preservation,
+        "claim_safety": claim_safety,
+        "custom_scene_prompt": custom_scene_prompt,
+        "reference_usage": reference_usage,
+        "use_campaign_preset": use_campaign_preset,
+        "campaign_brief_json": campaign_brief_json,
+        "prompt_controls_json": prompt_controls_json,
+        "review_checklist_json": review_checklist_json,
         "status": result.status,
         "product_image_path": result.product_image_path,
         "reference_image_path": result.reference_image_path,
@@ -178,6 +216,34 @@ async def generate_asset(
     })
 
     return result.model_dump()
+
+
+@app.patch("/assets/{asset_id}/selection")
+def select_variant(asset_id: str, request: VariantSelectionRequest, db: Session = Depends(get_db)):
+    selected_variant_id = request.selected_variant_id
+    if not selected_variant_id:
+        raise HTTPException(status_code=400, detail="selected_variant_id is required")
+
+    repo = AssetRepository(db)
+    asset = repo.get(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    variants = json.loads(asset.variants_json or "[]")
+    if not any(variant.get("variant_id") == selected_variant_id for variant in variants):
+        raise HTTPException(status_code=404, detail="Variant not found")
+
+    asset.selected_variant_id = selected_variant_id
+    asset.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(asset)
+    repo.add_event(
+        asset_id=asset.id,
+        event_type="variant_selected",
+        status=asset.status,
+        payload={"selected_variant_id": selected_variant_id},
+    )
+    return repo.to_dict(asset)
 
 
 @app.get("/assets")
@@ -317,11 +383,13 @@ def review_asset(asset_id: str, request: ReviewRequest, db: Session = Depends(ge
         asset_id=asset_id,
         status=request.status,
         reviewer_note=request.reviewer_note,
+        review_checklist=request.review_checklist,
         description=request.description,
         caption=request.caption,
         hashtags=request.hashtags,
         channel_outputs=request.channel_outputs,
         best_variant_id=request.best_variant_id,
+        selected_variant_id=request.selected_variant_id,
         identity_verified=request.identity_verified,
     )
 
@@ -391,6 +459,8 @@ def _build_image_evaluation(asset: dict, request: ImageEvaluationRequest) -> dic
 def get_file(path: str):
     file_path = _resolve_storage_path(path)
     if not file_path.exists():
+        if file_path.suffix.lower() in ALLOWED_IMAGE_EXTENSIONS:
+            return _missing_file_placeholder(file_path)
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(str(file_path))
 
@@ -456,6 +526,24 @@ def _resolve_storage_path(path: str) -> Path:
         raise HTTPException(status_code=403, detail="File access outside storage is not allowed")
 
     return resolved_path
+
+
+def _missing_file_placeholder(file_path: Path) -> StreamingResponse:
+    canvas = Image.new("RGB", (1024, 1024), (245, 242, 236))
+    draw = ImageDraw.Draw(canvas)
+    draw.rounded_rectangle([72, 72, 952, 952], radius=36, outline=(178, 168, 152), width=6)
+    draw.text((120, 160), "Image unavailable", fill=(54, 49, 44))
+    draw.text((120, 240), file_path.name, fill=(104, 96, 87))
+    draw.text(
+        (120, 340),
+        "The asset file was pruned or never persisted.\nRegenerate the asset to restore the original image.",
+        fill=(92, 84, 76),
+    )
+
+    buffer = BytesIO()
+    canvas.save(buffer, format="PNG")
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="image/png")
 
 
 def _configuration_warnings() -> list[str]:

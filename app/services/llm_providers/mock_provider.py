@@ -60,6 +60,22 @@ class MockLLMProvider(LLMProvider):
             "email_subject": f"New arrival: {name}",
             "cta_suggestions": ["Message to buy", "Reserve this item", "View product details"],
             "hashtags": hashtags,
+            "claim_safety": {
+                "safe_claims": [
+                    f"{name} is presented in a styled campaign visual",
+                    f"The asset supports a {objective} campaign on {platform}",
+                ],
+                "risky_claims": ["authentic", "new", "official", "limited edition"],
+                "missing_product_information": [
+                    "material composition",
+                    "condition grading",
+                    "authenticity verification",
+                ],
+                "recommended_seller_verification": [
+                    "Confirm product condition before publishing",
+                    "Verify any brand or authenticity claim with seller records",
+                ],
+            },
         }
 
         return {
@@ -68,4 +84,5 @@ class MockLLMProvider(LLMProvider):
             "caption": caption,
             "hashtags": hashtags,
             "channel_outputs": channel_outputs,
+            "claim_safety": channel_outputs["claim_safety"],
         }

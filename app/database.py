@@ -28,6 +28,8 @@ def _migrate_sqlite_assets_table():
     column_defs = {
         "campaign_name": "VARCHAR",
         "brand_name": "VARCHAR",
+        "product_condition": "TEXT",
+        "key_product_facts": "TEXT",
         "target_audience": "TEXT",
         "customer_persona": "TEXT",
         "platform": "VARCHAR",
@@ -39,8 +41,15 @@ def _migrate_sqlite_assets_table():
         "offer": "VARCHAR",
         "language": "VARCHAR",
         "compliance_notes": "TEXT",
+        "scene_direction": "TEXT",
+        "identity_preservation": "TEXT",
+        "claim_safety": "TEXT",
+        "campaign_brief_json": "TEXT",
+        "prompt_controls_json": "TEXT",
+        "review_checklist_json": "TEXT",
         "channel_outputs_json": "TEXT",
         "quality_report_json": "TEXT",
+        "selected_variant_id": "VARCHAR",
         "exported_at": "DATETIME",
     }
 

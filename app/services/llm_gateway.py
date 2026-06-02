@@ -60,18 +60,22 @@ class LLMGateway:
         channel_outputs = dict(content.get("channel_outputs") or {})
         description = content.get("description") or channel_outputs.get("product_description") or ""
         caption = content.get("caption") or channel_outputs.get("instagram_caption") or ""
+        claim_safety = content.get("claim_safety") or channel_outputs.get("claim_safety") or {}
 
         channel_outputs.setdefault("product_description", description)
         channel_outputs.setdefault("instagram_caption", caption)
         channel_outputs.setdefault("hashtags", hashtags)
         if content.get("product_analysis"):
             channel_outputs.setdefault("product_analysis", content["product_analysis"])
+        if claim_safety:
+            channel_outputs.setdefault("claim_safety", claim_safety)
         return {
             "provider": content.get("provider", "unknown"),
             "description": description,
             "caption": caption,
             "hashtags": hashtags,
             "channel_outputs": channel_outputs,
+            "claim_safety": claim_safety,
         }
 
     def _safe_error(self, exc: Exception) -> str:

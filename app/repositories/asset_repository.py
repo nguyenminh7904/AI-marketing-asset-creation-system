@@ -13,7 +13,9 @@ class AssetRepository:
         self.db = db
 
     def create(self, data: dict) -> Asset:
-        asset = Asset(**data)
+        allowed_fields = set(Asset.__table__.columns.keys())
+        asset_data = {key: value for key, value in data.items() if key in allowed_fields}
+        asset = Asset(**asset_data)
         self.db.add(asset)
         self.db.commit()
         self.db.refresh(asset)
@@ -39,11 +41,13 @@ class AssetRepository:
         asset_id: str,
         status: str,
         reviewer_note: str | None,
+        review_checklist: dict | None = None,
         description: str | None = None,
         caption: str | None = None,
         hashtags: list[str] | None = None,
         channel_outputs: dict | None = None,
         best_variant_id: str | None = None,
+        selected_variant_id: str | None = None,
         identity_verified: bool = False,
     ):
         asset = self.get(asset_id)
@@ -63,6 +67,12 @@ class AssetRepository:
             asset.channel_outputs_json = json.dumps(channel_outputs, ensure_ascii=False)
         if best_variant_id:
             self._apply_best_variant(asset, best_variant_id)
+        if selected_variant_id:
+            asset.selected_variant_id = selected_variant_id
+        elif best_variant_id and not asset.selected_variant_id:
+            asset.selected_variant_id = best_variant_id
+        if review_checklist is not None:
+            asset.review_checklist_json = json.dumps(review_checklist, ensure_ascii=False)
 
         asset.updated_at = datetime.utcnow()
         self.db.commit()
@@ -79,6 +89,7 @@ class AssetRepository:
                     for value in [description, caption, hashtags, channel_outputs]
                 ),
                 "identity_verified": identity_verified,
+                "review_checklist": review_checklist or {},
             },
         )
         return asset
@@ -134,11 +145,7 @@ class AssetRepository:
         )
 
     def _apply_best_variant(self, asset: Asset, best_variant_id: str):
-        variants = json.loads(asset.variants_json or "[]")
-        selected = next(
-            (variant for variant in variants if variant.get("variant_id") == best_variant_id),
-            None,
-        )
+        selected = self._find_variant(asset, best_variant_id)
         if not selected:
             return
 
@@ -146,13 +153,54 @@ class AssetRepository:
         asset.best_image_path = selected.get("image_path")
         asset.best_score = selected.get("scores", {}).get("final_score")
 
+    def _find_variant(self, asset: Asset, variant_id: str) -> dict | None:
+        variants = json.loads(asset.variants_json or "[]")
+        return next((variant for variant in variants if variant.get("variant_id") == variant_id), None)
+
+    def _variant_snapshot(self, asset: Asset, variant_id: str | None) -> dict:
+        if not variant_id:
+            return {}
+        variant = self._find_variant(asset, variant_id)
+        if not variant:
+            return {}
+        scores = variant.get("scores") or {}
+        return {
+            "variant_id": variant.get("variant_id"),
+            "image_path": variant.get("image_path"),
+            "provider": variant.get("provider"),
+            "score": scores.get("final_score"),
+            "display_score": variant.get("display_score"),
+            "quality_status": variant.get("quality_status"),
+            "notes": variant.get("notes") or [],
+            "variant_direction": variant.get("variant_direction"),
+        }
+
     @staticmethod
     def to_dict(asset: Asset) -> dict:
+        campaign_brief = json.loads(asset.campaign_brief_json or "{}")
+        prompt_controls = json.loads(asset.prompt_controls_json or "{}")
+        variants = json.loads(asset.variants_json or "[]")
+        recommended_variant_id = asset.best_variant_id
+        selected_variant_id = asset.selected_variant_id or recommended_variant_id
+        recommended_variant = next(
+            (variant for variant in variants if variant.get("variant_id") == recommended_variant_id),
+            None,
+        ) or {}
+        selected_variant = next(
+            (variant for variant in variants if variant.get("variant_id") == selected_variant_id),
+            None,
+        ) or recommended_variant
+
+        selected_scores = selected_variant.get("scores") or {}
+        recommended_scores = recommended_variant.get("scores") or {}
         return {
             "id": asset.id,
             "product_name": asset.product_name,
             "campaign_name": asset.campaign_name,
+            "campaign_preset": campaign_brief.get("campaign_preset"),
             "brand_name": asset.brand_name,
+            "product_condition": asset.product_condition,
+            "key_product_facts": asset.key_product_facts,
             "target_audience": asset.target_audience,
             "customer_persona": asset.customer_persona,
             "platform": asset.platform,
@@ -164,13 +212,32 @@ class AssetRepository:
             "offer": asset.offer,
             "language": asset.language,
             "compliance_notes": asset.compliance_notes,
+            "scene_direction": asset.scene_direction,
+            "identity_preservation": asset.identity_preservation,
+            "claim_safety": asset.claim_safety,
+            "campaign_brief": campaign_brief,
+            "prompt_controls": prompt_controls,
+            "custom_scene_prompt": prompt_controls.get("custom_scene_prompt") or campaign_brief.get("custom_scene_prompt"),
+            "reference_usage": prompt_controls.get("reference_usage"),
+            "use_campaign_preset": prompt_controls.get("use_campaign_preset"),
+            "review_checklist": json.loads(asset.review_checklist_json or "{}"),
             "status": asset.status,
             "product_image_path": asset.product_image_path,
             "reference_image_path": asset.reference_image_path,
-            "best_image_path": asset.best_image_path,
-            "variants": json.loads(asset.variants_json or "[]"),
-            "best_variant_id": asset.best_variant_id,
-            "best_score": asset.best_score,
+            "best_image_path": selected_variant.get("image_path") or asset.best_image_path,
+            "variants": variants,
+            "best_variant_id": recommended_variant_id,
+            "recommended_variant_id": recommended_variant_id,
+            "selected_variant_id": asset.selected_variant_id,
+            "selected_variant_number": next(
+                (index + 1 for index, variant in enumerate(variants) if variant.get("variant_id") == selected_variant_id),
+                None,
+            ),
+            "best_score": selected_scores.get("final_score") or asset.best_score,
+            "recommended_score": recommended_scores.get("final_score") or asset.best_score,
+            "selected_score": selected_scores.get("final_score") or asset.best_score,
+            "selected_image_path": selected_variant.get("image_path") or asset.best_image_path,
+            "recommended_image_path": recommended_variant.get("image_path") or asset.best_image_path,
             "visual_provider_used": asset.visual_provider_used,
             "llm_provider_used": asset.llm_provider_used,
             "description": asset.description,
